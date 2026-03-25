@@ -1,34 +1,20 @@
 pipeline {
-
     agent { label 'apache' }
  
     stages {
  
         stage('Deploy') {
-
             steps {
-
                 sh '''
-
                 echo "Deploying application..."
  
-                # Clean old files
-
-                rm -rf /var/www/html/*
- 
-                # Copy new files
-
-                cp -r * /var/www/html/
+                rm -rf /srv/www/htdocs/*
+                cp -r * /srv/www/htdocs/
  
                 echo "Deployment completed successfully"
-
                 '''
-
             }
-
         }
  
     }
-
 }
- 
