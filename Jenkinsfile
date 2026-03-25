@@ -5,7 +5,7 @@ pipeline {
 
         stage('Clone') {
             steps {
-                git 'https://github.com/gowda-m/static-website.git'
+                git 'https://github.com/gowda-m/jenkins-ci-cd.git'
             }
         }
 
