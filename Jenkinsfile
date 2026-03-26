@@ -3,12 +3,6 @@ pipeline {
 
     stages {
 
-        stage('Checkout') {
-            steps {
-                git 'https://github.com/gowda-m/jenkins-ci-cd.git'
-            }
-        }
-
         stage('Deploy') {
             steps {
                 sh '''
