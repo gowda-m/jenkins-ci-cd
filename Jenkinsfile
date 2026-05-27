@@ -6,12 +6,12 @@ pipeline {
         stage('Deploy') {
             steps {
                 sh '''
-                echo "Deployment application..."
+                echo "Deploy application..."
 
                 sudo rm -rf /srv/www/htdocs/*
                 sudo cp -r * /srv/www/htdocs/
 
-                echo "Deployment completed successfully"
+                echo "Deployment completed successfully now"
                 '''
             }
         }
