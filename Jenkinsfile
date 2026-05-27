@@ -6,7 +6,7 @@ pipeline {
         stage('Deploy') {
             steps {
                 sh '''
-                echo "Deploy application..."
+                echo "Deployment application..."
 
                 sudo rm -rf /srv/www/htdocs/*
                 sudo cp -r * /srv/www/htdocs/
