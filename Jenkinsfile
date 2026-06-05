@@ -19,7 +19,7 @@ pipeline {
     post {
         success {
             emailext(
-                to: 'gowda.m@intelizign.com,iliyas.bhatari@intelizign.com,puneetkumar.neelanjanmath@intelizign.com',
+                to: 'gowda.m@intelizign.com,iliyas.bhatari@intelizign.com',
                 subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                 mimeType: 'text/html',
                 body: """
@@ -46,7 +46,7 @@ ${env.BUILD_URL}
  
         failure {
             emailext(
-                to: 'gowda.m@intelizign.com,iliyas.bhatari@intelizign.com,puneetkumar.neelanjanmath@intelizign.com',
+                to: 'gowda.m@intelizign.com,iliyas.bhatari@intelizign.com',
                 subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
                 mimeType: 'text/html',
                 body: """
