@@ -3,7 +3,7 @@ pipeline {
 
  environment {
  NGINX_VERSION = "1.31.1"
- TARBALL = "${WORKSPACE}/nginx-${NGINX_VERSION}.tar.gz"
+ TARBALL = "/opt/nginx/nginx-${NGINX_VERSION}.tar.gz"
  BACKUP_PATH = "/opt/backup"
  }
 
@@ -12,7 +12,7 @@ pipeline {
  stage('Backup Nginx Config') {
  steps {
  sh '''
- echo "Taking backup..."
+ echo "Taking backup of Nginx config..."
 
  sudo mkdir -p ${BACKUP_PATH}
  sudo cp -a /etc/nginx ${BACKUP_PATH}/nginx_backup
@@ -25,7 +25,7 @@ pipeline {
  stage('Build & Install Nginx') {
  steps {
  sh '''
- echo "Starting Nginx build..."
+ echo "Starting Nginx upgrade build..."
 
  cd /tmp
  rm -rf nginx-${NGINX_VERSION}
@@ -42,20 +42,22 @@ pipeline {
  make
  sudo make install
 
- echo "Install completed"
+ echo "Nginx install completed"
  '''
  }
  }
 
- stage('Validate & Restart') {
+ stage('Validate & Restart Nginx') {
  steps {
  sh '''
- echo "Validating Nginx..."
+ echo "Validating Nginx configuration..."
 
  sudo nginx -t
+
+ echo "Restarting Nginx..."
  sudo systemctl restart nginx
 
- echo "Current version:"
+ echo "Current Nginx version:"
  nginx -v
  '''
  }
@@ -68,7 +70,12 @@ pipeline {
  emailext(
  to: "gowda.m@intelizign.com",
  subject: "SUCCESS: Nginx ${NGINX_VERSION} Upgrade",
- body: "Nginx upgrade to ${NGINX_VERSION} completed successfully."
+ body: """
+ Nginx upgrade completed successfully.
+
+Version: ${NGINX_VERSION}
+ Server: ${env.NODE_NAME}
+ """
  )
  }
 
@@ -87,7 +94,11 @@ pipeline {
  emailext(
  to: "gowda.m@intelizign.com",
  subject: "FAILED: Nginx Upgrade Rolled Back",
- body: "Upgrade failed. System rolled back to previous configuration."
+ body: """
+ Nginx upgrade FAILED and rollback executed.
+
+Reverted to previous configuration.
+ """
  )
  }
  }
