@@ -3,7 +3,7 @@ pipeline {
 
  environment {
  NGINX_VERSION = "1.31.1"
- TARBALL = "/opt/nginx/nginx-${NGINX_VERSION}.tar.gz"
+ TARBALL = "${WORKSPACE}/nginx-${NGINX_VERSION}.tar.gz"
  BACKUP_PATH = "/opt/backup"
  }
 
