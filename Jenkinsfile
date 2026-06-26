@@ -4,20 +4,21 @@ pipeline {
  environment {
  NGINX_VERSION = "1.31.1"
  TARBALL = "/opt/nginx/nginx-${NGINX_VERSION}.tar.gz"
- BACKUP_PATH = "/opt/backup"
+ NGINX_BIN = "/usr/local/nginx/sbin/nginx"
+ PREFIX = "/usr/local/nginx"
  }
 
  stages {
 
- stage('Backup Nginx Config') {
+ stage('Backup Config') {
  steps {
  sh '''
- echo "Taking backup of Nginx config..."
+ echo "Backing up nginx config..."
 
- sudo mkdir -p ${BACKUP_PATH}
- sudo cp -a /etc/nginx ${BACKUP_PATH}/nginx_backup
+ sudo mkdir -p /opt/backup
+ sudo cp -a ${PREFIX} /opt/backup/nginx_backup 2>/dev/null || true
 
- echo "Backup completed"
+ echo "Backup done"
  '''
  }
  }
@@ -25,7 +26,7 @@ pipeline {
  stage('Build & Install Nginx') {
  steps {
  sh '''
- echo "Starting Nginx upgrade build..."
+ echo "Starting build..."
 
  cd /tmp
  rm -rf nginx-${NGINX_VERSION}
@@ -34,48 +35,42 @@ pipeline {
  cd nginx-${NGINX_VERSION}
 
  ./configure \
- --prefix=/etc/nginx \
- --sbin-path=/usr/sbin/nginx \
- --conf-path=/etc/nginx/nginx.conf \
+ --prefix=${PREFIX} \
+ --sbin-path=${NGINX_BIN} \
+ --conf-path=${PREFIX}/conf/nginx.conf \
  --with-http_ssl_module
 
  make
  sudo make install
 
- echo "Nginx install completed"
+ echo "Build completed"
  '''
  }
  }
 
- stage('Validate & Restart Nginx') {
+ stage('Validate & Reload') {
  steps {
  sh '''
- echo "Validating Nginx configuration..."
+ echo "Testing config..."
 
- sudo nginx -t
+ sudo ${NGINX_BIN} -t
 
- echo "Restarting Nginx..."
- sudo systemctl restart nginx
+ echo "Reloading nginx..."
+ sudo ${NGINX_BIN} -s reload
 
- echo "Current Nginx version:"
- nginx -v
+ echo "Version:"
+ ${NGINX_BIN} -v
  '''
  }
  }
  }
 
  post {
-
  success {
  emailext(
  to: "gowda.m@intelizign.com",
- subject: "SUCCESS: Nginx ${NGINX_VERSION} Upgrade",
- body: """
- Nginx upgrade completed successfully.
-
-Version: ${NGINX_VERSION}
- Server: ${env.NODE_NAME}
- """
+ subject: "SUCCESS: Nginx ${NGINX_VERSION} Deployed",
+ body: "Nginx ${NGINX_VERSION} built and deployed successfully."
  )
  }
 
@@ -83,22 +78,18 @@ Version: ${NGINX_VERSION}
  sh '''
  echo "Rollback started..."
 
- sudo rm -rf /etc/nginx
- sudo cp -a ${BACKUP_PATH}/nginx_backup /etc/nginx
+ sudo rm -rf ${PREFIX}
+ sudo cp -a /opt/backup/nginx_backup ${PREFIX}
 
- sudo systemctl restart nginx
+ sudo ${NGINX_BIN} -s reload || true
 
  echo "Rollback completed"
  '''
 
  emailext(
  to: "gowda.m@intelizign.com",
- subject: "FAILED: Nginx Upgrade Rolled Back",
- body: """
- Nginx upgrade FAILED and rollback executed.
-
-Reverted to previous configuration.
- """
+ subject: "FAILED: Nginx Rollback Executed",
+ body: "Nginx deployment failed and rollback was performed."
  )
  }
  }
