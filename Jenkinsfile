@@ -1,75 +1,94 @@
 pipeline {
-    agent { label 'apache' }
- 
-    stages {
-        stage('Deploy') {
-            steps {
-                sh '''
-                echo "Deploy application..."
- 
-                sudo rm -rf /srv/www/htdocs/*
-                sudo cp -r * /srv/www/htdocs/
- 
-                echo "Deployment completed successfully"
-                '''
-            }
-        }
-    }
- 
-    post {
-        success {
-            emailext(
-                to: 'gowda.m@intelizign.com',
-                subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                mimeType: 'text/html',
-                body: """
-<html>
-<body>
-<h2>✅ Jenkins Build Successful</h2>
- 
-<p><b>Job Name:</b> ${env.JOB_NAME}</p>
-<p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
-<p><b>Build Status:</b> SUCCESS</p>
- 
-<p>
-<b>Build URL:</b><br>
-<a href="${env.BUILD_URL}">
-${env.BUILD_URL}
-</a>
-</p>
- 
-</body>
-</html>
-"""
-            )
-        }
- 
-        failure {
-            emailext(
-                to: 'gowda.m@intelizign.com',
-                subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-                mimeType: 'text/html',
-                body: """
-<html>
-<body>
-<h2>❌ Jenkins Build Failed</h2>
- 
-<p><b>Job Name:</b> ${env.JOB_NAME}</p>
-<p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
-<p><b>Build Status:</b> FAILED</p>
- 
-<p>
-<b>Build URL:</b><br>
-<a href="${env.BUILD_URL}">
-${env.BUILD_URL}
-</a>
-</p>
- 
-</body>
-</html>
-"""
-            )
-        }
-    }
-}
- 
+ agent any
+
+ environment {
+ NGINX_VERSION = "1.31.1"
+ TARBALL = "/opt/nginx/nginx-${NGINX_VERSION}.tar.gz"
+ BACKUP_PATH = "/opt/backup"
+ }
+
+ stages {
+
+ stage('Backup Nginx Config') {
+ steps {
+ sh '''
+ echo "Taking backup..."
+
+ sudo mkdir -p ${BACKUP_PATH}
+ sudo cp -a /etc/nginx ${BACKUP_PATH}/nginx_backup
+
+ echo "Backup completed"
+ '''
+ }
+ }
+
+ stage('Build & Install Nginx') {
+ steps {
+ sh '''
+ echo "Starting Nginx build..."
+
+ cd /tmp
+ rm -rf nginx-${NGINX_VERSION}
+
+ tar -xzf ${TARBALL}
+ cd nginx-${NGINX_VERSION}
+
+ ./configure \
+ --prefix=/etc/nginx \
+ --sbin-path=/usr/sbin/nginx \
+ --conf-path=/etc/nginx/nginx.conf \
+ --with-http_ssl_module
+
+ make
+ sudo make install
+
+ echo "Install completed"
+ '''
+ }
+ }
+
+ stage('Validate & Restart') {
+ steps {
+ sh '''
+ echo "Validating Nginx..."
+
+ sudo nginx -t
+ sudo systemctl restart nginx
+
+ echo "Current version:"
+ nginx -v
+ '''
+ }
+ }
+ }
+
+ post {
+
+ success {
+ emailext(
+ to: "gowda.m@intelizign.com",
+ subject: "SUCCESS: Nginx ${NGINX_VERSION} Upgrade",
+ body: "Nginx upgrade to ${NGINX_VERSION} completed successfully."
+ )
+ }
+
+ failure {
+ sh '''
+ echo "Rollback started..."
+
+ sudo rm -rf /etc/nginx
+ sudo cp -a ${BACKUP_PATH}/nginx_backup /etc/nginx
+
+ sudo systemctl restart nginx
+
+ echo "Rollback completed"
+ '''
+
+ emailext(
+ to: "gowda.m@intelizign.com",
+ subject: "FAILED: Nginx Upgrade Rolled Back",
+ body: "Upgrade failed. System rolled back to previous configuration."
+ )
+ }
+ }
+ }
