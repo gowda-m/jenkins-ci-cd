@@ -15,7 +15,7 @@ pipeline {
  sh '''
  whoami
  id
- sudo -n whoami
+ sudo -n whoami || true
  '''
  }
  }
@@ -23,11 +23,11 @@ pipeline {
  stage('Stop Nginx') {
  steps {
  sh '''
- set -e
-
- if sudo -n systemctl is-active --quiet nginx; then
+ set +e
+ sudo systemctl is-active --quiet nginx
+ if [ $? -eq 0 ]; then
  echo "Stopping nginx..."
- sudo -n systemctl stop nginx
+ sudo systemctl stop nginx
  else
  echo "Nginx already stopped."
  fi
@@ -61,13 +61,14 @@ pipeline {
  steps {
  sh '''
  set -e
-
  cd /opt
 
- test -f nginx-${NGINX_VERSION}.tar.gz
+ if [ ! -f nginx-${NGINX_VERSION}.tar.gz ]; then
+ echo "Nginx source tar missing!"
+ exit 1
+ fi
 
  rm -rf nginx-${NGINX_VERSION}
-
  tar -xzf nginx-${NGINX_VERSION}.tar.gz
  '''
  }
@@ -77,7 +78,6 @@ pipeline {
  steps {
  sh '''
  set -e
-
  cd /opt/nginx-${NGINX_VERSION}
 
  ./configure \
@@ -91,8 +91,7 @@ pipeline {
  --with-pcre
 
  make -j$(nproc)
-
- sudo -n make install
+ sudo make install
  '''
  }
  }
@@ -120,11 +119,8 @@ pipeline {
  stage('Validate Configuration') {
  steps {
  sh '''
- set -ex
-
- sudo -n ${NGINX_PATH}/bin/nginx \
- -t \
- -c ${NGINX_PATH}/conf/nginx.conf
+ set -e
+ sudo ${NGINX_PATH}/bin/nginx -t -c ${NGINX_PATH}/conf/nginx.conf
  '''
  }
  }
@@ -133,12 +129,9 @@ pipeline {
  steps {
  sh '''
  set -e
-
- sudo -n systemctl start nginx
-
- sleep 3
-
- sudo -n systemctl status nginx --no-pager
+ sudo systemctl start nginx
+ sleep 2
+ sudo systemctl status nginx --no-pager
  '''
  }
  }
@@ -147,10 +140,8 @@ pipeline {
  steps {
  sh '''
  set -e
-
  curl -I http://localhost
-
- sudo -n ${NGINX_PATH}/bin/nginx -v
+ sudo ${NGINX_PATH}/bin/nginx -v
  '''
  }
  }
@@ -159,44 +150,16 @@ pipeline {
  post {
 
  success {
- echo "========================================"
- echo "Nginx upgraded successfully."
- echo "Version : ${NGINX_VERSION}"
- echo "========================================"
+ echo """
+ ========================================
+ Nginx upgrade SUCCESS
+ Version: ${NGINX_VERSION}
+ ========================================
+ """
  }
 
  failure {
-
- sh '''
- set +e
-
- echo "Upgrade failed. Rolling back..."
-
- sudo -n systemctl stop nginx
-
- if [ -d /opt/nginx-${OLD_VERSION} ]; then
- cd /opt/nginx-${OLD_VERSION}
- sudo -n make install
- fi
-
- sudo mkdir -p ${NGINX_PATH}/conf/conf.d
- sudo mkdir -p ${NGINX_PATH}/ssl
-
- [ -f ${BACKUP_PATH}/nginx.conf ] && \
- sudo cp ${BACKUP_PATH}/nginx.conf ${NGINX_PATH}/conf/
-
- [ -d ${BACKUP_PATH}/conf.d ] && \
- sudo cp -a ${BACKUP_PATH}/conf.d/. ${NGINX_PATH}/conf/conf.d/
-
- [ -d ${BACKUP_PATH}/ssl ] && \
- sudo cp -a ${BACKUP_PATH}/ssl/. ${NGINX_PATH}/ssl/
-
- sudo -n systemctl start nginx
-
- sudo -n systemctl status nginx --no-pager
- '''
-
- echo "Rollback completed."
+ echo "Pipeline failed. Manual rollback may be required."
  }
  }
  }
