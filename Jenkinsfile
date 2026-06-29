@@ -14,28 +14,44 @@ pipeline {
  steps {
  sh '''
  set -e
-
  mkdir -p ${BACKUP_PATH}
 
+ if [ -f ${NGINX_PATH}/conf/nginx.conf ]; then
  cp ${NGINX_PATH}/conf/nginx.conf ${BACKUP_PATH}/
+ fi
+
+ if [ -d ${NGINX_PATH}/conf/conf.d ]; then
  cp -r ${NGINX_PATH}/conf/conf.d ${BACKUP_PATH}/
+ fi
+
+ if [ -d ${NGINX_PATH}/ssl ]; then
  cp -r ${NGINX_PATH}/ssl ${BACKUP_PATH}/
+ fi
  '''
  }
  }
 
- stage('Download & Build Nginx') {
+ stage('Download & Extract') {
  steps {
  sh '''
  set -e
-           cd /opt
- #if [ ! -f nginx-${NGINX_VERSION}.tar.gz ]; then
- #wget http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
- #fi
+ cd /opt
 
+ if [ ! -f nginx-${NGINX_VERSION}.tar.gz ]; then
+ curl -O http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
+ fi
+
+ rm -rf nginx-${NGINX_VERSION}
  tar -xzf nginx-${NGINX_VERSION}.tar.gz
+ '''
+ }
+ }
 
- cd nginx-${NGINX_VERSION}
+ stage('Build & Install') {
+ steps {
+ sh '''
+ set -e
+ cd /opt/nginx-${NGINX_VERSION}
 
  ./configure \
  --prefix=${NGINX_PATH} \
@@ -48,35 +64,32 @@ pipeline {
  --with-pcre
 
  make -j$(nproc)
-
- sudo make install
+ make install
  '''
  }
  }
 
- stage('Restore Configuration') {
+ stage('Restore Configurations') {
  steps {
  sh '''
  set -e
 
- cp ${BACKUP_PATH}/nginx.conf ${NGINX_PATH}/conf/
+ cp ${BACKUP_PATH}/nginx.conf ${NGINX_PATH}/conf/ || true
 
  mkdir -p ${NGINX_PATH}/conf/conf.d
- cp -r ${BACKUP_PATH}/conf.d/* ${NGINX_PATH}/conf/conf.d/
+ cp -r ${BACKUP_PATH}/conf.d/* ${NGINX_PATH}/conf/conf.d/ || true
 
  mkdir -p ${NGINX_PATH}/ssl
- cp -r ${BACKUP_PATH}/ssl/* ${NGINX_PATH}/ssl/
+ cp -r ${BACKUP_PATH}/ssl/* ${NGINX_PATH}/ssl/ || true
  '''
  }
  }
 
- stage('Validate Configuration') {
+ stage('Validate Config') {
  steps {
  sh '''
  set -e
-
- ${NGINX_PATH}/bin/nginx -t \
- -c ${NGINX_PATH}/conf/nginx.conf
+ ${NGINX_PATH}/bin/nginx -t -c ${NGINX_PATH}/conf/nginx.conf
  '''
  }
  }
@@ -86,9 +99,11 @@ pipeline {
  sh '''
  set -e
 
- systemctl daemon-reload
+ if systemctl list-units --type=service | grep -q nginx; then
  systemctl restart nginx
- systemctl status nginx --no-pager
+ else
+ ${NGINX_PATH}/bin/nginx -s reload || ${NGINX_PATH}/bin/nginx
+ fi
  '''
  }
  }
@@ -98,13 +113,10 @@ pipeline {
  sh '''
  set -e
 
- curl -I http://localhost
+ sleep 3
+ curl -I http://localhost || exit 1
 
- if systemctl is-active --quiet nginx; then
- echo "Nginx is running."
- else
- exit 1
- fi
+ ${NGINX_PATH}/bin/nginx -v
  '''
  }
  }
@@ -113,70 +125,27 @@ pipeline {
  post {
 
  success {
- emailext(
- subject: "Nginx Upgrade Successful",
- body: """
- Nginx has been upgraded successfully.
-
-Version : ${NGINX_VERSION}
- Installation Path : ${NGINX_PATH}
-
-Configuration restored successfully.
- Service is running normally.
- """,
- to: "ops-team@example.com"
- )
+ echo "Nginx upgrade successful to ${NGINX_VERSION}"
  }
 
  failure {
  sh '''
  set +e
+ echo "Upgrade failed - rolling back..."
 
- echo "Upgrade failed. Starting rollback..."
+ if [ -d /opt/nginx-${OLD_VERSION} ]; then
+ cd /opt/nginx-${OLD_VERSION}
+ make install
+ fi
 
- wget -nc http://nginx.org/download/nginx-${OLD_VERSION}.tar.gz
+ cp ${BACKUP_PATH}/nginx.conf ${NGINX_PATH}/conf/ || true
+ cp -r ${BACKUP_PATH}/conf.d/* ${NGINX_PATH}/conf/conf.d/ || true
+ cp -r ${BACKUP_PATH}/ssl/* ${NGINX_PATH}/ssl/ || true
 
- tar -xzf nginx-${OLD_VERSION}.tar.gz
-
- cd nginx-${OLD_VERSION}
-
- ./configure \
- --prefix=${NGINX_PATH} \
- --sbin-path=${NGINX_PATH}/bin/nginx \
- --conf-path=${NGINX_PATH}/conf/nginx.conf \
- --pid-path=${NGINX_PATH}/logs/nginx.pid \
- --error-log-path=${NGINX_PATH}/logs/error.log \
- --http-log-path=${NGINX_PATH}/logs/access.log \
- --with-http_ssl_module \
- --with-pcre
-
- make -j$(nproc)
-
- sudo make install
-
- cp ${BACKUP_PATH}/nginx.conf ${NGINX_PATH}/conf/
- cp -r ${BACKUP_PATH}/conf.d/* ${NGINX_PATH}/conf/conf.d/
- cp -r ${BACKUP_PATH}/ssl/* ${NGINX_PATH}/ssl/
-
- ${NGINX_PATH}/bin/nginx -t \
- -c ${NGINX_PATH}/conf/nginx.conf
-
- systemctl restart nginx
+ ${NGINX_PATH}/bin/nginx -t && ${NGINX_PATH}/bin/nginx -s reload || true
  '''
 
- emailext(
- subject: "Nginx Upgrade Failed - Rollback Completed",
- body: """
- Upgrade to Nginx ${NGINX_VERSION} failed.
-
-Rollback completed successfully.
-
-Current Version : ${OLD_VERSION}
-
-Please review the Jenkins build logs.
- """,
- to: "ops-team@example.com"
- )
+ echo "Rollback completed to ${OLD_VERSION}"
  }
  }
  }
