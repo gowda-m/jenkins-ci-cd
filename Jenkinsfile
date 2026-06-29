@@ -15,38 +15,11 @@ pipeline {
  sh '''
  set -e
 
- sudo mkdir -p ${BACKUP_PATH}
+ mkdir -p ${BACKUP_PATH}
 
- echo "===== Verifying Nginx Directories ====="
- whoami
- hostname
- ls -ld ${NGINX_PATH}
- ls -ld ${NGINX_PATH}/conf
-
- # Backup nginx.conf
- if [ -f ${NGINX_PATH}/conf/nginx.conf ]; then
- echo "Backing up nginx.conf..."
- sudo cp ${NGINX_PATH}/conf/nginx.conf ${BACKUP_PATH}/
- else
- echo "ERROR: nginx.conf not found!"
- exit 1
- fi
-
- # Backup conf.d if exists
- if [ -d ${NGINX_PATH}/conf/conf.d ]; then
- echo "Backing up conf.d..."
- sudo cp -r ${NGINX_PATH}/conf/conf.d ${BACKUP_PATH}/
- else
- echo "INFO: conf.d directory not found. Skipping."
- fi
-
- # Backup ssl if exists
- if [ -d ${NGINX_PATH}/ssl ]; then
- echo "Backing up SSL certificates..."
- sudo cp -r ${NGINX_PATH}/ssl ${BACKUP_PATH}/
- else
- echo "INFO: SSL directory not found. Skipping."
- fi
+ cp ${NGINX_PATH}/conf/nginx.conf ${BACKUP_PATH}/
+ cp -r ${NGINX_PATH}/conf/conf.d ${BACKUP_PATH}/
+ cp -r ${NGINX_PATH}/ssl ${BACKUP_PATH}/
  '''
  }
  }
@@ -56,9 +29,9 @@ pipeline {
  sh '''
  set -e
 
- wget -nc http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
-
- rm -rf nginx-${NGINX_VERSION}
+ if [ ! -f nginx-${NGINX_VERSION}.tar.gz ]; then
+ wget http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
+ fi
 
  tar -xzf nginx-${NGINX_VERSION}.tar.gz
 
@@ -86,24 +59,13 @@ pipeline {
  sh '''
  set -e
 
- echo "Restoring nginx.conf..."
- sudo cp ${BACKUP_PATH}/nginx.conf ${NGINX_PATH}/conf/
+ cp ${BACKUP_PATH}/nginx.conf ${NGINX_PATH}/conf/
 
- if [ -d ${BACKUP_PATH}/conf.d ]; then
- echo "Restoring conf.d..."
- sudo mkdir -p ${NGINX_PATH}/conf/conf.d
- sudo cp -r ${BACKUP_PATH}/conf.d/* ${NGINX_PATH}/conf/conf.d/ || true
- else
- echo "No conf.d backup found."
- fi
+ mkdir -p ${NGINX_PATH}/conf/conf.d
+ cp -r ${BACKUP_PATH}/conf.d/* ${NGINX_PATH}/conf/conf.d/
 
- if [ -d ${BACKUP_PATH}/ssl ]; then
- echo "Restoring SSL..."
- sudo mkdir -p ${NGINX_PATH}/ssl
- sudo cp -r ${BACKUP_PATH}/ssl/* ${NGINX_PATH}/ssl/ || true
- else
- echo "No SSL backup found."
- fi
+ mkdir -p ${NGINX_PATH}/ssl
+ cp -r ${BACKUP_PATH}/ssl/* ${NGINX_PATH}/ssl/
  '''
  }
  }
@@ -113,7 +75,7 @@ pipeline {
  sh '''
  set -e
 
- sudo ${NGINX_PATH}/bin/nginx -t \
+ ${NGINX_PATH}/bin/nginx -t \
  -c ${NGINX_PATH}/conf/nginx.conf
  '''
  }
@@ -124,10 +86,9 @@ pipeline {
  sh '''
  set -e
 
- sudo systemctl daemon-reload
- sudo systemctl restart nginx
-
- sudo systemctl status nginx --no-pager
+ systemctl daemon-reload
+ systemctl restart nginx
+ systemctl status nginx --no-pager
  '''
  }
  }
@@ -137,19 +98,11 @@ pipeline {
  sh '''
  set -e
 
- echo "===== Nginx Version ====="
- ${NGINX_PATH}/bin/nginx -v
-
- echo "===== HTTP Check ====="
  curl -I http://localhost
 
- echo "===== Service Status ====="
- systemctl is-active nginx
-
  if systemctl is-active --quiet nginx; then
- echo "SUCCESS : Nginx is running."
+ echo "Nginx is running."
  else
- echo "FAILED : Nginx service is not running."
  exit 1
  fi
  '''
@@ -161,24 +114,15 @@ pipeline {
 
  success {
  emailext(
- subject: "Nginx ${NGINX_VERSION} Upgrade Successful",
+ subject: "Nginx Upgrade Successful",
  body: """
- Hello Team,
+ Nginx has been upgraded successfully.
 
-The Nginx upgrade completed successfully.
+Version : ${NGINX_VERSION}
+ Installation Path : ${NGINX_PATH}
 
-New Version : ${NGINX_VERSION}
- Installation : ${NGINX_PATH}
-
-Tasks Completed:
- - Configuration backed up
- - Nginx compiled successfully
- - Configuration restored
- - Service restarted
- - Health check passed
-
-Regards,
- Jenkins
+Configuration restored successfully.
+ Service is running normally.
  """,
  to: "ops-team@example.com"
  )
@@ -188,13 +132,9 @@ Regards,
  sh '''
  set +e
 
- echo "====================================="
  echo "Upgrade failed. Starting rollback..."
- echo "====================================="
 
  wget -nc http://nginx.org/download/nginx-${OLD_VERSION}.tar.gz
-
- rm -rf nginx-${OLD_VERSION}
 
  tar -xzf nginx-${OLD_VERSION}.tar.gz
 
@@ -214,47 +154,29 @@ Regards,
 
  sudo make install
 
- echo "Restoring nginx.conf..."
- sudo cp ${BACKUP_PATH}/nginx.conf ${NGINX_PATH}/conf/
+ cp ${BACKUP_PATH}/nginx.conf ${NGINX_PATH}/conf/
+ cp -r ${BACKUP_PATH}/conf.d/* ${NGINX_PATH}/conf/conf.d/
+ cp -r ${BACKUP_PATH}/ssl/* ${NGINX_PATH}/ssl/
 
- if [ -d ${BACKUP_PATH}/conf.d ]; then
- sudo mkdir -p ${NGINX_PATH}/conf/conf.d
- sudo cp -r ${BACKUP_PATH}/conf.d/* ${NGINX_PATH}/conf/conf.d/ || true
- fi
-
- if [ -d ${BACKUP_PATH}/ssl ]; then
- sudo mkdir -p ${NGINX_PATH}/ssl
- sudo cp -r ${BACKUP_PATH}/ssl/* ${NGINX_PATH}/ssl/ || true
- fi
-
- sudo ${NGINX_PATH}/bin/nginx -t \
+ ${NGINX_PATH}/bin/nginx -t \
  -c ${NGINX_PATH}/conf/nginx.conf
 
- sudo systemctl restart nginx
+ systemctl restart nginx
  '''
 
  emailext(
  subject: "Nginx Upgrade Failed - Rollback Completed",
  body: """
- Hello Team,
+ Upgrade to Nginx ${NGINX_VERSION} failed.
 
-The upgrade to Nginx ${NGINX_VERSION} failed.
-
-Rollback has been completed successfully.
+Rollback completed successfully.
 
 Current Version : ${OLD_VERSION}
 
-Please review the Jenkins console log for additional details.
-
-Regards,
- Jenkins
+Please review the Jenkins build logs.
  """,
  to: "ops-team@example.com"
  )
- }
-
- always {
- cleanWs()
  }
  }
  }
