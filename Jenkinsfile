@@ -3,7 +3,7 @@ pipeline {
 
  environment {
  NGINX_VERSION = "1.31.1"
- OLD_VERSION = "1.20.1"
+ OLD_VERSION = "1.28.3"
  NGINX_PATH = "/opt/nginx"
  BACKUP_PATH = "/opt/backup"
  }
