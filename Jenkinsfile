@@ -3,63 +3,75 @@ pipeline {
 
  environment {
  NGINX_VERSION = "1.31.1"
- TARBALL = "/opt/nginx/nginx-${NGINX_VERSION}.tar.gz"
- NGINX_BIN = "/usr/local/nginx/sbin/nginx"
- PREFIX = "/usr/local/nginx"
+ OLD_VERSION = "1.20.1"
+ NGINX_PATH = "/opt/nginx"
+ BACKUP_PATH = "/opt/backup"
  }
 
  stages {
-
- stage('Backup Config') {
+ stage('Backup Configs & SSL') {
  steps {
  sh '''
- echo "Backing up nginx config..."
-
- sudo mkdir -p /opt/backup
- sudo cp -a ${PREFIX} /opt/backup/nginx_backup 2>/dev/null || true
-
- echo "Backup done"
+ mkdir -p ${BACKUP_PATH}
+ cp ${NGINX_PATH}/conf/nginx.conf ${BACKUP_PATH}/nginx.conf
+ cp -r ${NGINX_PATH}/conf/conf.d ${BACKUP_PATH}/conf.d
+ cp -r ${NGINX_PATH}/ssl ${BACKUP_PATH}/ssl
  '''
  }
  }
 
- stage('Build & Install Nginx') {
+ stage('Download & Build New Nginx') {
  steps {
  sh '''
- echo "Starting build..."
-
- cd /tmp
- rm -rf nginx-${NGINX_VERSION}
-
- tar -xzf ${TARBALL}
+ wget http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
+ tar -xvzf nginx-${NGINX_VERSION}.tar.gz
  cd nginx-${NGINX_VERSION}
-
- ./configure \
- --prefix=${PREFIX} \
- --sbin-path=${NGINX_BIN} \
- --conf-path=${PREFIX}/conf/nginx.conf \
- --with-http_ssl_module
-
+ ./configure --prefix=${NGINX_PATH} --with-http_ssl_module
  make
  sudo make install
-
- echo "Build completed"
  '''
  }
  }
 
- stage('Validate & Reload') {
+ stage('Restore Configs & SSL') {
  steps {
  sh '''
- echo "Testing config..."
+ sudo cp ${BACKUP_PATH}/nginx.conf ${NGINX_PATH}/conf/nginx.conf
+ sudo cp -r ${BACKUP_PATH}/conf.d/* ${NGINX_PATH}/conf/conf.d/
+ sudo cp -r ${BACKUP_PATH}/ssl/* ${NGINX_PATH}/ssl/
+ '''
+ }
+ }
 
- sudo ${NGINX_BIN} -t
+ stage('Validation via systemd') {
+ steps {
+ sh '''
+ sudo systemctl daemon-reload
+ sudo systemctl restart nginx
+ sudo systemctl status nginx --no-pager
+ curl -vk https://localhost | grep "200 OK"
+ '''
+ }
+ }
 
- echo "Reloading nginx..."
- sudo ${NGINX_BIN} -s reload
-
- echo "Version:"
- ${NGINX_BIN} -v
+ stage('Rollback') {
+ when {
+ expression { currentBuild.result == 'FAILURE' }
+ }
+ steps {
+ sh '''
+ echo "Rolling back to Nginx ${OLD_VERSION}"
+ wget http://nginx.org/download/nginx-${OLD_VERSION}.tar.gz
+ tar -xvzf nginx-${OLD_VERSION}.tar.gz
+ cd nginx-${OLD_VERSION}
+ ./configure --prefix=${NGINX_PATH} --with-http_ssl_module
+ make
+ sudo make install
+ sudo cp ${BACKUP_PATH}/nginx.conf ${NGINX_PATH}/conf/nginx.conf
+ sudo cp -r ${BACKUP_PATH}/conf.d/* ${NGINX_PATH}/conf/conf.d/
+ sudo cp -r ${BACKUP_PATH}/ssl/* ${NGINX_PATH}/ssl/
+ sudo systemctl daemon-reload
+ sudo systemctl restart nginx
  '''
  }
  }
@@ -68,28 +80,16 @@ pipeline {
  post {
  success {
  emailext(
- to: "gowda.m@intelizign.com",
- subject: "SUCCESS: Nginx ${NGINX_VERSION} Deployed",
- body: "Nginx ${NGINX_VERSION} built and deployed successfully."
+ subject: "Nginx Upgrade Successful",
+ body: "Nginx ${NGINX_VERSION} upgrade completed successfully. Configs and SSL restored from ${BACKUP_PATH}. Service restarted via systemd.",
+ to: "ops-team@example.com"
  )
  }
-
  failure {
- sh '''
- echo "Rollback started..."
-
- sudo rm -rf ${PREFIX}
- sudo cp -a /opt/backup/nginx_backup ${PREFIX}
-
- sudo ${NGINX_BIN} -s reload || true
-
- echo "Rollback completed"
- '''
-
  emailext(
- to: "gowda.m@intelizign.com",
- subject: "FAILED: Nginx Rollback Executed",
- body: "Nginx deployment failed and rollback was performed."
+ subject: "Nginx Upgrade Failed - Rolled Back",
+ body: "Upgrade to Nginx ${NGINX_VERSION} failed. Rolled back to ${OLD_VERSION}. Configs and SSL restored from ${BACKUP_PATH}. Service restarted via systemd.",
+ to: "ops-team@example.com"
  )
  }
  }
