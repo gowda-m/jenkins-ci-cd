@@ -28,7 +28,7 @@ pipeline {
  steps {
  sh '''
  set -e
-
+           cd /opt
  #if [ ! -f nginx-${NGINX_VERSION}.tar.gz ]; then
  #wget http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
  #fi
