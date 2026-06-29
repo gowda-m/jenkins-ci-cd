@@ -29,9 +29,9 @@ pipeline {
  sh '''
  set -e
 
- if [ ! -f nginx-${NGINX_VERSION}.tar.gz ]; then
- wget http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
- fi
+ #if [ ! -f nginx-${NGINX_VERSION}.tar.gz ]; then
+ #wget http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
+ #fi
 
  tar -xzf nginx-${NGINX_VERSION}.tar.gz
 
