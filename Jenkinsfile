@@ -10,6 +10,31 @@ pipeline {
 
  stages {
 
+ stage('Debug') {
+ steps {
+ sh '''
+ whoami
+ id
+ sudo -n whoami
+ '''
+ }
+ }
+
+ stage('Stop Nginx') {
+ steps {
+ sh '''
+ set -e
+
+ if sudo -n systemctl is-active --quiet nginx; then
+ echo "Stopping nginx..."
+ sudo -n systemctl stop nginx
+ else
+ echo "Nginx already stopped."
+ fi
+ '''
+ }
+ }
+
  stage('Backup Configuration') {
  steps {
  sh '''
@@ -32,22 +57,6 @@ pipeline {
  }
  }
 
- stage('Stop Nginx') {
- steps {
- sh '''
- set +e
-
- if systemctl is-active --quiet nginx; then
- echo "Stopping nginx..."
- sudo systemctl stop nginx
- sleep 3
- fi
-
- sudo pkill -9 nginx 2>/dev/null || true
- '''
- }
- }
-
  stage('Extract Source') {
  steps {
  sh '''
@@ -55,18 +64,16 @@ pipeline {
 
  cd /opt
 
- if [ ! -f nginx-${NGINX_VERSION}.tar.gz ]; then
- curl -LO https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz
- fi
+ test -f nginx-${NGINX_VERSION}.tar.gz
 
- sudo rm -rf nginx-${NGINX_VERSION}
+ rm -rf nginx-${NGINX_VERSION}
 
  tar -xzf nginx-${NGINX_VERSION}.tar.gz
  '''
  }
  }
 
- stage('Configure') {
+ stage('Compile Nginx') {
  steps {
  sh '''
  set -e
@@ -82,30 +89,10 @@ pipeline {
  --http-log-path=${NGINX_PATH}/logs/access.log \
  --with-http_ssl_module \
  --with-pcre
- '''
- }
- }
-
- stage('Compile') {
- steps {
- sh '''
- set -e
-
- cd /opt/nginx-${NGINX_VERSION}
 
  make -j$(nproc)
- '''
- }
- }
 
- stage('Install') {
- steps {
- sh '''
- set -e
-
- cd /opt/nginx-${NGINX_VERSION}
-
- sudo make install
+ sudo -n make install
  '''
  }
  }
@@ -130,12 +117,13 @@ pipeline {
  }
  }
 
- stage('Validate') {
+ stage('Validate Configuration') {
  steps {
  sh '''
- set -e
+ set -ex
 
- ${NGINX_PATH}/bin/nginx -t \
+ sudo -n ${NGINX_PATH}/bin/nginx \
+ -t \
  -c ${NGINX_PATH}/conf/nginx.conf
  '''
  }
@@ -146,9 +134,11 @@ pipeline {
  sh '''
  set -e
 
- sudo systemctl start nginx
+ sudo -n systemctl start nginx
 
- sleep 5
+ sleep 3
+
+ sudo -n systemctl status nginx --no-pager
  '''
  }
  }
@@ -160,9 +150,7 @@ pipeline {
 
  curl -I http://localhost
 
- ${NGINX_PATH}/bin/nginx -v
-
- systemctl is-active --quiet nginx
+ sudo -n ${NGINX_PATH}/bin/nginx -v
  '''
  }
  }
@@ -171,25 +159,24 @@ pipeline {
  post {
 
  success {
- sh '''
- echo "Upgrade Successful"
-
- ${NGINX_PATH}/bin/nginx -v
- '''
+ echo "========================================"
+ echo "Nginx upgraded successfully."
+ echo "Version : ${NGINX_VERSION}"
+ echo "========================================"
  }
 
  failure {
+
  sh '''
  set +e
 
  echo "Upgrade failed. Rolling back..."
 
- sudo systemctl stop nginx || true
+ sudo -n systemctl stop nginx
 
  if [ -d /opt/nginx-${OLD_VERSION} ]; then
  cd /opt/nginx-${OLD_VERSION}
-
- sudo make install
+ sudo -n make install
  fi
 
  sudo mkdir -p ${NGINX_PATH}/conf/conf.d
@@ -204,12 +191,12 @@ pipeline {
  [ -d ${BACKUP_PATH}/ssl ] && \
  sudo cp -a ${BACKUP_PATH}/ssl/. ${NGINX_PATH}/ssl/
 
- ${NGINX_PATH}/bin/nginx -t || true
+ sudo -n systemctl start nginx
 
- sudo systemctl start nginx || true
+ sudo -n systemctl status nginx --no-pager
+ '''
 
  echo "Rollback completed."
- '''
  }
  }
  }
