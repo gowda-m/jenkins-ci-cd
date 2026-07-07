@@ -151,10 +151,8 @@ pipeline {
 
  success {
  echo """
- ========================================
  Nginx upgrade SUCCESS
  Version: ${NGINX_VERSION}
- ========================================
  """
  }
 
