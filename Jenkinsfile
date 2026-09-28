@@ -129,7 +129,7 @@ pipeline {
  steps {
  sh '''
  set -e
- sudo systemctl start nginx
+ sudo systemctl start nginx.service
  sleep 2
  sudo systemctl status nginx --no-pager
  '''
