@@ -10,7 +10,7 @@ The pipeline pulls code from a GitHub repository and deploys the website to Apac
  
 ---
  
-## Technologies Used
+## Technologies Used for this project 
  
 * Jenkins (CI/CD Automation)
 * Apache HTTP Server
