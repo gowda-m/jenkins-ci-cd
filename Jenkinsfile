@@ -136,12 +136,12 @@ pipeline {
  }
  }
 
- stage('Health Check') {
+ stage('Health Checking') {
  steps {
  sh '''
  set -e
  curl -I http://localhost
- sudo ${NGINX_PATH}/bin/nginx -v
+ sudo ${NGINX_PATH}/bin/nginx -V
  '''
  }
  }
