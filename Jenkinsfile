@@ -157,7 +157,7 @@ pipeline {
  }
 
  failure {
- echo "Pipeline failed. Manual rollback may be required."
+ echo "its Pipeline failed. Manual rollback may be required."
  }
  }
  }
